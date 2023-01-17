@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -36,47 +37,62 @@ var rootCmd = &cobra.Command{
 	Example: "tc 1593766111",
 	Args:    cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		var parsedSeconds int64
-		var parsedNanoseconds int64 = 0
-		var err error
-		if len(args[0]) <= 10 {
-			parsedSeconds, err = strconv.ParseInt(args[0], 10, 64)
-			if err != nil {
-				cmd.PrintErrln(err)
-				return
-			}
-		} else {
-			parsedSeconds, err = strconv.ParseInt(args[0][:10], 10, 64)
-			if err != nil {
-				cmd.PrintErrln(err)
-				return
-			}
-			parsedNanoseconds, err = strconv.ParseInt(args[0][10:], 10, 64)
-			if err != nil {
-				cmd.PrintErrln(err)
-				return
-			}
-		}
-
-		tz := os.Getenv("TZ")
-		locf := cmd.Flag("loc").Value.String()
-		if locf != "" {
-			tz = locf
-		}
-
-		loc, err := time.LoadLocation(tz)
+		_, err := strconv.ParseInt(args[0], 10, 64)
 		if err != nil {
-			cmd.PrintErrln(err)
-			return
-		}
-
-		converted := time.Unix(parsedSeconds, parsedNanoseconds).In(loc)
-		if parsedNanoseconds == 0 {
-			cmd.Println(converted.Format(time.RFC3339))
+			// try to parse RFC3339 and convert to timestamp
+			convertRFC3339ToUnixTimestamp(cmd, args[0])
 		} else {
-			cmd.Println(converted.Format(time.RFC3339Nano))
+			convertUnixTimestampToRFC3339(cmd, args[0])
 		}
 	},
+}
+
+func convertRFC3339ToUnixTimestamp(cmd *cobra.Command, s string) {
+	if strings.Contains(s, ".") { // has nano seconds
+		parsed, err := time.Parse(time.RFC3339Nano, s)
+		if err != nil {
+			cmd.PrintErrln("Invalid format!")
+			return
+		}
+		cmd.Println(parsed.UnixNano())
+	} else {
+		parsed, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			cmd.PrintErrln("Invalid format!")
+			return
+		}
+		cmd.Println(parsed.Unix())
+	}
+}
+
+func convertUnixTimestampToRFC3339(cmd *cobra.Command, s string) {
+	var parsedSeconds int64
+	var parsedNanoseconds int64 = 0
+	if len(s) > 10 {
+		parsedSeconds, _ = strconv.ParseInt(s[:10], 10, 64)
+		parsedNanoseconds, _ = strconv.ParseInt(s[10:], 10, 64)
+	} else {
+		parsedSeconds, _ = strconv.ParseInt(s, 10, 64)
+	}
+
+	tz := os.Getenv("TZ")
+	locf := cmd.Flag("loc").Value.String()
+	if locf != "" {
+		tz = locf
+	}
+
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		cmd.PrintErrln(err)
+		return
+	}
+
+	converted := time.Unix(parsedSeconds, parsedNanoseconds).In(loc)
+	if parsedNanoseconds == 0 {
+		cmd.Println(converted.Format(time.RFC3339))
+	} else {
+		cmd.Println(converted.Format(time.RFC3339Nano))
+	}
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
